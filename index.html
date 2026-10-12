@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>8-Player Darts Tournament — Live Sync Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    @media print {
+      .no-print { display: none !important; }
+      body { background: #fff !important; color: #000 !important; }
+      .print-card {
+        background: #fff !important;
+        color: #000 !important;
+        border: 1px solid #000 !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+      }
+      .print-text { color: #000 !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen pb-16">
+
+  <!-- TOP BAR -->
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 no-print">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <span class="text-2xl">🎯</span>
+        <div>
+          <h1 class="font-extrabold text-lg tracking-tight text-white">8-Player Darts Night</h1>
+          <div class="flex items-center gap-2 text-xs text-slate-400">
+            <span id="syncIndicator" class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+            <span id="syncStatusText">Local Mode — Click "Go Live" to sync devices</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="goLiveBtn" onclick="createLiveRoom()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition shadow">
+          ⚡ Go Live (Create Shared Room)
+        </button>
+        <button id="shareBtn" onclick="openShareModal()" class="hidden bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition shadow">
+          📲 Share Link / QR
+        </button>
+        <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-700">
+          🖨️ Print Sheet
+        </button>
+        <button onclick="resetTournament()" class="bg-rose-950/60 hover:bg-rose-900 text-rose-300 font-semibold text-xs px-3 py-2 rounded-lg border border-rose-800/60">
+          Reset
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- PRINT HEADER -->
+  <div class="hidden print:block text-center py-4 border-b-2 border-black mb-4">
+    <h1 class="text-2xl font-bold">8-PLAYER DARTS TOURNAMENT — GROUP & KNOCKOUT SHEET</h1>
+    <p class="text-sm">Group Stage: Best of 3 Legs (First to 2) | Semi-Finals: Best of 5 (First to 3) | Final: Best of 7 (First to 4)</p>
+  </div>
+
+  <main class="max-w-6xl mx-auto px-4 pt-6 space-y-8">
+
+    <!-- GROUP TABLES -->
+    <section class="grid md:grid-cols-2 gap-6">
+      <!-- GROUP A -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-base text-emerald-400 print-text">GROUP A STANDINGS (Board 1)</h2>
+          <span class="text-xs text-slate-400 print-text">Top 2 Advance</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="text-xs uppercase text-slate-400 border-b border-slate-800 print-text">
+              <tr>
+                <th class="py-2 pr-2">#</th>
+                <th class="py-2 pr-2">Player</th>
+                <th class="py-2 text-center">P</th>
+                <th class="py-2 text-center">W</th>
+                <th class="py-2 text-center">L</th>
+                <th class="py-2 text-center">LW</th>
+                <th class="py-2 text-center">LL</th>
+                <th class="py-2 text-center">+/-</th>
+                <th class="py-2 text-right">Pts</th>
+              </tr>
+            </thead>
+            <tbody id="tableGroupA" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- GROUP B -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="font-bold text-base text-sky-400 print-text">GROUP B STANDINGS (Board 2)</h2>
+          <span class="text-xs text-slate-400 print-text">Top 2 Advance</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left">
+            <thead class="text-xs uppercase text-slate-400 border-b border-slate-800 print-text">
+              <tr>
+                <th class="py-2 pr-2">#</th>
+                <th class="py-2 pr-2">Player</th>
+                <th class="py-2 text-center">P</th>
+                <th class="py-2 text-center">W</th>
+                <th class="py-2 text-center">L</th>
+                <th class="py-2 text-center">LW</th>
+                <th class="py-2 text-center">LL</th>
+                <th class="py-2 text-center">+/-</th>
+                <th class="py-2 text-right">Pts</th>
+              </tr>
+            </thead>
+            <tbody id="tableGroupB" class="divide-y divide-slate-800/60"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- GROUP FIXTURES -->
+    <section class="grid md:grid-cols-2 gap-6">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
+        <h3 class="font-bold text-sm uppercase tracking-wider text-emerald-400 mb-3 print-text">Group A Fixtures (Best of 3)</h3>
+        <div id="fixturesGroupA" class="space-y-2.5"></div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
+        <h3 class="font-bold text-sm uppercase tracking-wider text-sky-400 mb-3 print-text">Group B Fixtures (Best of 3)</h3>
+        <div id="fixturesGroupB" class="space-y-2.5"></div>
+      </div>
+    </section>
+
+    <!-- KNOCKOUT FINALS -->
+    <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 class="font-extrabold text-lg text-amber-400 print-text">🏆 KNOCKOUT FINALS</h2>
+        <span class="text-xs text-slate-400 print-text">Semi-Finals: Best of 5 (First to 3) • Grand Final: Best of 7 (First to 4)</span>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-5" id="knockoutContainer"></div>
+    </section>
+
+    <!-- SIDE POT: 180s & HIGH CHECKOUT -->
+    <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+      <h2 class="font-bold text-base text-purple-400 mb-3 print-text">🔥 180s & Highest Checkout Tracker</h2>
+      <div id="statsGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+    </section>
+  </main>
+
+  <!-- SHARE / QR MODAL -->
+  <div id="shareModal" class="fixed inset-0 bg-black/75 hidden items-center justify-center p-4 z-50 no-print">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-center space-y-4">
+      <h3 class="text-lg font-bold text-white">📲 Live Multi-Device Sync Active</h3>
+      <p class="text-xs text-slate-300">Anyone scanning this QR code or opening the link below can view and tap in scores in real time.</p>
+      <div class="flex justify-center">
+        <img id="qrImage" class="w-44 h-44 rounded-lg border-4 border-white bg-white" alt="QR Code" />
+      </div>
+      <input id="shareUrlInput" readonly class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 text-center" />
+      <div class="flex gap-2 justify-center">
+        <button onclick="copyShareLink()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-lg">
+          📋 Copy WhatsApp Link
+        </button>
+        <button onclick="closeShareModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs px-4 py-2.5 rounded-lg">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // DEFAULT TOURNAMENT STATE (Option 2: 2 Groups + Knockout)
+    // =========================================================================
+    const DEFAULT_STATE = {
+      updatedAt: 0,
+      groupA: ["Ben Townsend", "Goody", "Pat Barron", "Andy Gray"],
+      groupB: ["Adam Carballo", "Marcus Blackmoore", "Lewis Bell", "Joe Moore"],
+      matchesA: [
+        { id: "A1", round: "R1", p1: "Ben Townsend", p2: "Goody", s1: 0, s2: 0 },
+        { id: "A2", round: "R2", p1: "Pat Barron", p2: "Andy Gray", s1: 0, s2: 0 },
+        { id: "A3", round: "R3", p1: "Ben Townsend", p2: "Pat Barron", s1: 0, s2: 0 },
+        { id: "A4", round: "R4", p1: "Goody", p2: "Andy Gray", s1: 0, s2: 0 },
+        { id: "A5", round: "R5", p1: "Ben Townsend", p2: "Andy Gray", s1: 0, s2: 0 },
+        { id: "A6", round: "R6", p1: "Goody", p2: "Pat Barron", s1: 0, s2: 0 }
+      ],
+      matchesB: [
+        { id: "B1", round: "R1", p1: "Adam Carballo", p2: "Marcus Blackmoore", s1: 0, s2: 0 },
+        { id: "B2", round: "R2", p1: "Lewis Bell", p2: "Joe Moore", s1: 0, s2: 0 },
+        { id: "B3", round: "R3", p1: "Adam Carballo", p2: "Lewis Bell", s1: 0, s2: 0 },
+        { id: "B4", round: "R4", p1: "Marcus Blackmoore", p2: "Joe Moore", s1: 0, s2: 0 },
+        { id: "B5", round: "R5", p1: "Adam Carballo", p2: "Joe Moore", s1: 0, s2: 0 },
+        { id: "B6", round: "R6", p1: "Marcus Blackmoore", p2: "Lewis Bell", s1: 0, s2: 0 }
+      ],
+      knockout: {
+        sf1: { s1: 0, s2: 0 },
+        sf2: { s1: 0, s2: 0 },
+        final: { s1: 0, s2: 0 }
+      },
+      stats: {
+        "Ben Townsend": { maxes: 0, highOut: 0 },
+        "Goody": { maxes: 0, highOut: 0 },
+        "Pat Barron": { maxes: 0, highOut: 0 },
+        "Andy Gray": { maxes: 0, highOut: 0 },
+        "Adam Carballo": { maxes: 0, highOut: 0 },
+        "Marcus Blackmoore": { maxes: 0, highOut: 0 },
+        "Lewis Bell": { maxes: 0, highOut: 0 },
+        "Joe Moore": { maxes: 0, highOut: 0 }
+      }
+    };
+
+    let state = JSON.parse(localStorage.getItem("darts8_state")) || structuredClone(DEFAULT_STATE);
+    let syncId = new URLSearchParams(window.location.search).get("room");
+    let isPushing = false;
+
+    // =========================================================================
+    // CLOUD SYNC ENGINE (Zero-Config JSONBlob REST API)
+    // =========================================================================
+    const SYNC_API = "https://jsonblob.com/api/jsonBlob";
+
+    async function createLiveRoom() {
+      const btn = document.getElementById("goLiveBtn");
+      btn.textContent = "Creating Room...";
+      btn.disabled = true;
+      try {
+        state.updatedAt = Date.now();
+        const res = await fetch(SYNC_API, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify(state)
+        });
+        const locationHeader = res.headers.get("Location") || "";
+        const newId = locationHeader.split("/").pop();
+        if (!newId) throw new Error("Could not get Room ID");
+        syncId = newId;
+        const newUrl = `${window.location.pathname}?room=${syncId}`;
+        window.history.replaceState({}, "", newUrl);
+        updateSyncUI(true);
+        openShareModal();
+      } catch (err) {
+        alert("Could not connect to live sync server. Make sure you are online.");
+        btn.textContent = "⚡ Go Live (Create Shared Room)";
+        btn.disabled = false;
+      }
+    }
+
+    async function pushCloudState() {
+      state.updatedAt = Date.now();
+      localStorage.setItem("darts8_state", JSON.stringify(state));
+      renderAll();
+      if (!syncId) return;
+      isPushing = true;
+      try {
+        await fetch(`${SYNC_API}/${syncId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify(state)
+        });
+        updateSyncUI(true);
+      } catch (e) {
+        console.warn("Cloud push error:", e);
+      } finally {
+        isPushing = false;
+      }
+    }
+
+    async function pullCloudState() {
+      if (!syncId || isPushing) return;
+      try {
+        const res = await fetch(`${SYNC_API}/${syncId}`, {
+          headers: { "Accept": "application/json" }
+        });
+        if (!res.ok) return;
+        const remote = await res.json();
+        if (remote && remote.updatedAt && remote.updatedAt > (state.updatedAt || 0)) {
+          state = remote;
+          localStorage.setItem("darts8_state", JSON.stringify(state));
+          renderAll();
+        }
+        updateSyncUI(true);
+      } catch (e) {
+        console.warn("Polling error:", e);
+      }
+    }
+
+    function updateSyncUI(connected) {
+      const dot = document.getElementById("syncIndicator");
+      const txt = document.getElementById("syncStatusText");
+      const goBtn = document.getElementById("goLiveBtn");
+      const shareBtn = document.getElementById("shareBtn");
+      if (connected && syncId) {
+        dot.className = "inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
+        txt.textContent = `Live Room Synced (${syncId.slice(0, 6)}...)`;
+        goBtn.classList.add("hidden");
+        shareBtn.classList.remove("hidden");
+      }
+    }
+
+    // =========================================================================
+    // STANDINGS & TIE-BREAKER CALCULATION
+    // =========================================================================
+    function computeStandings(players, matches) {
+      const map = {};
+      players.forEach(p => {
+        map[p] = { name: p, P: 0, W: 0, L: 0, LW: 0, LL: 0, LD: 0, Pts: 0 };
+      });
+
+      matches.forEach(m => {
+        const s1 = Number(m.s1) || 0;
+        const s2 = Number(m.s2) || 0;
+        if (s1 === 0 && s2 === 0) return;
+        map[m.p1].LW += s1;
+        map[m.p1].LL += s2;
+        map[m.p2].LW += s2;
+        map[m.p2].LL += s1;
+
+        if (s1 >= 2 || s2 >= 2) {
+          map[m.p1].P += 1;
+          map[m.p2].P += 1;
+          if (s1 > s2) {
+            map[m.p1].W += 1;
+            map[m.p1].Pts += 2;
+            map[m.p2].L += 1;
+          } else if (s2 > s1) {
+            map[m.p2].W += 1;
+            map[m.p2].Pts += 2;
+            map[m.p1].L += 1;
+          }
+        }
+      });
+
+      Object.values(map).forEach(r => { r.LD = r.LW - r.LL; });
+
+      return Object.values(map).sort((a, b) => {
+        if (b.Pts !== a.Pts) return b.Pts - a.Pts;
+        if (b.LD !== a.LD) return b.LD - a.LD;
+        if (b.LW !== a.LW) return b.LW - a.LW;
+        // Head-to-head tie-breaker
+        const h2h = matches.find(m =>
+          (m.p1 === a.name && m.p2 === b.name) || (m.p1 === b.name && m.p2 === a.name)
+        );
+        if (h2h && (h2h.s1 >= 2 || h2h.s2 >= 2)) {
+          const aWon = (h2h.p1 === a.name && h2h.s1 > h2h.s2) || (h2h.p2 === a.name && h2h.s2 > h2h.s1);
+          return aWon ? -1 : 1;
+        }
+        return a.name.localeCompare(b.name);
+      });
+    }
+
+    // =========================================================================
+    // UI RENDERERS
+    // =========================================================================
+    function renderTable(tbodyId, rows) {
+      const tbody = document.getElementById(tbodyId);
+      tbody.innerHTML = rows.map((r, idx) => {
+        const qualifyBadge = idx < 2
+          ? `<span class="inline-block w-5 h-5 leading-5 text-center rounded bg-emerald-500/20 text-emerald-300 font-bold text-xs print-text">${idx + 1}</span>`
+          : `<span class="inline-block w-5 h-5 leading-5 text-center text-slate-500 text-xs print-text">${idx + 1}</span>`;
+        const ldStr = r.LD > 0 ? `+${r.LD}` : `${r.LD}`;
+        return `
+          <tr class="${idx < 2 ? 'bg-emerald-950/15' : ''}">
+            <td class="py-2 pr-2">${qualifyBadge}</td>
+            <td class="py-2 pr-2 font-semibold text-white print-text">${r.name}</td>
+            <td class="py-2 text-center">${r.P}</td>
+            <td class="py-2 text-center text-emerald-400 font-semibold print-text">${r.W}</td>
+            <td class="py-2 text-center text-rose-400 print-text">${r.L}</td>
+            <td class="py-2 text-center">${r.LW}</td>
+            <td class="py-2 text-center">${r.LL}</td>
+            <td class="py-2 text-center font-medium">${ldStr}</td>
+            <td class="py-2 text-right font-extrabold text-white print-text">${r.Pts}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function renderFixtures(containerId, groupKey, matches) {
+      const el = document.getElementById(containerId);
+      el.innerHTML = matches.map((m, idx) => {
+        const done = m.s1 >= 2 || m.s2 >= 2;
+        const p1Win = m.s1 >= 2 && m.s1 > m.s2;
+        const p2Win = m.s2 >= 2 && m.s2 > m.s1;
+        return `
+          <div class="flex items-center justify-between gap-2 bg-slate-950/70 border ${done ? 'border-emerald-800/60' : 'border-slate-800'} rounded-lg px-3 py-2 print-card">
+            <span class="text-[11px] font-bold text-slate-400 w-7 print-text">${m.round}</span>
+            <div class="flex-1 text-right truncate text-sm ${p1Win ? 'font-extrabold text-emerald-400' : 'text-slate-200'} print-text">${m.p1}</div>
+            
+            <div class="flex items-center gap-1 mx-1">
+              <button onclick="changeScore('${groupKey}', ${idx}, 's1', -1)" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">-</button>
+              <span class="w-6 text-center font-extrabold text-sm print-text">${m.s1}</span>
+              <button onclick="changeScore('${groupKey}', ${idx}, 's1', 1)" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">+</button>
+              <span class="text-slate-500 font-bold px-0.5">:</span>
+              <button onclick="changeScore('${groupKey}', ${idx}, 's2', -1)" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">-</button>
+              <span class="w-6 text-center font-extrabold text-sm print-text">${m.s2}</span>
+              <button onclick="changeScore('${groupKey}', ${idx}, 's2', 1)" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">+</button>
+            </div>
+
+            <div class="flex-1 text-left truncate text-sm ${p2Win ? 'font-extrabold text-emerald-400' : 'text-slate-200'} print-text">${m.p2}</div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderKnockout(standingsA, standingsB) {
+      const a1 = standingsA[0]?.name || "1st Group A";
+      const a2 = standingsA[1]?.name || "2nd Group A";
+      const b1 = standingsB[0]?.name || "1st Group B";
+      const b2 = standingsB[1]?.name || "2nd Group B";
+
+      const sf1 = state.knockout.sf1;
+      const sf2 = state.knockout.sf2;
+      const fin = state.knockout.final;
+
+      const sf1Winner = sf1.s1 >= 3 ? a1 : (sf1.s2 >= 3 ? b2 : "Winner SF1");
+      const sf2Winner = sf2.s1 >= 3 ? b1 : (sf2.s2 >= 3 ? a2 : "Winner SF2");
+      const champion = fin.s1 >= 4 ? sf1Winner : (fin.s2 >= 4 ? sf2Winner : null);
+
+      const cards = [
+        { key: "sf1", title: "Semi-Final 1 (First to 3)", p1: a1, p2: b2, s1: sf1.s1, s2: sf1.s2, max: 3 },
+        { key: "sf2", title: "Semi-Final 2 (First to 3)", p1: b1, p2: a2, s1: sf2.s1, s2: sf2.s2, max: 3 },
+        { key: "final", title: "Grand Final (First to 4)", p1: sf1Winner, p2: sf2Winner, s1: fin.s1, s2: fin.s2, max: 4 }
+      ];
+
+      document.getElementById("knockoutContainer").innerHTML = cards.map(c => `
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 print-card">
+          <div class="text-xs font-bold uppercase tracking-wider text-amber-400 print-text">${c.title}</div>
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm truncate pr-2 print-text">${c.p1}</span>
+            <div class="flex items-center gap-1.5">
+              <button onclick="changeKnockout('${c.key}', 's1', -1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">-</button>
+              <span class="w-6 text-center font-extrabold text-base print-text">${c.s1}</span>
+              <button onclick="changeKnockout('${c.key}', 's1', 1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">+</button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="font-bold text-sm truncate pr-2 print-text">${c.p2}</span>
+            <div class="flex items-center gap-1.5">
+              <button onclick="changeKnockout('${c.key}', 's2', -1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">-</button>
+              <span class="w-6 text-center font-extrabold text-base print-text">${c.s2}</span>
+              <button onclick="changeKnockout('${c.key}', 's2', 1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">+</button>
+            </div>
+          </div>
+          ${c.key === 'final' && champion ? `<div class="pt-2 border-t border-amber-500/30 text-center text-xs font-extrabold text-amber-300 print-text">👑 CHAMPION: ${champion}</div>` : ''}
+        </div>
+      `).join("");
+    }
+
+    function renderStats() {
+      const allPlayers = [...state.groupA, ...state.groupB];
+      document.getElementById("statsGrid").innerHTML = allPlayers.map(p => {
+        const st = state.stats[p] || { maxes: 0, highOut: 0 };
+        return `
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2 print-card">
+            <div class="font-bold text-xs text-white truncate print-text">${p}</div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400 print-text">180s:</span>
+              <div class="flex items-center gap-1">
+                <button onclick="change180('${p}', -1)" class="no-print w-5 h-5 rounded bg-slate-800 text-xs">-</button>
+                <span class="font-bold w-5 text-center text-amber-400 print-text">${st.maxes}</span>
+                <button onclick="change180('${p}', 1)" class="no-print w-5 h-5 rounded bg-slate-800 text-xs">+</button>
+              </div>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400 print-text">High Out:</span>
+              <input type="number" min="0" max="170" value="${st.highOut || 0}"
+                onchange="changeHighOut('${p}', this.value)"
+                class="w-14 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-bold text-emerald-400 print-text" />
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // =========================================================================
+    // INTERACTION HANDLERS
+    // =========================================================================
+    function changeScore(groupKey, idx, side, delta) {
+      const match = state[groupKey][idx];
+      match[side] = Math.max(0, Math.min(2, (Number(match[side]) || 0) + delta));
+      pushCloudState();
+    }
+
+    function changeKnockout(stageKey, side, delta, maxLegs) {
+      const m = state.knockout[stageKey];
+      m[side] = Math.max(0, Math.min(maxLegs, (Number(m[side]) || 0) + delta));
+      pushCloudState();
+    }
+
+    function change180(player, delta) {
+      if (!state.stats[player]) state.stats[player] = { maxes: 0, highOut: 0 };
+      state.stats[player].maxes = Math.max(0, (state.stats[player].maxes || 0) + delta);
+      pushCloudState();
+    }
+
+    function changeHighOut(player, val) {
+      if (!state.stats[player]) state.stats[player] = { maxes: 0, highOut: 0 };
+      state.stats[player].highOut = Math.max(0, Math.min(170, Number(val) || 0));
+      pushCloudState();
+    }
+
+    function resetTournament() {
+      if (!confirm("Reset all scores back to 0-0?")) return;
+      state = structuredClone(DEFAULT_STATE);
+      pushCloudState();
+    }
+
+    function openShareModal() {
+      const fullUrl = window.location.href;
+      document.getElementById("shareUrlInput").value = fullUrl;
+      document.getElementById("qrImage").src =
+        `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(fullUrl)}`;
+      document.getElementById("shareModal").classList.remove("hidden");
+      document.getElementById("shareModal").classList.add("flex");
+    }
+
+    function closeShareModal() {
+      document.getElementById("shareModal").classList.add("hidden");
+      document.getElementById("shareModal").classList.remove("flex");
+    }
+
+    function copyShareLink() {
+      const input = document.getElementById("shareUrlInput");
+      navigator.clipboard.writeText(input.value);
+      alert("Live Tournament Link copied! Paste it into your WhatsApp group.");
+    }
+
+    function renderAll() {
+      const standingsA = computeStandings(state.groupA, state.matchesA);
+      const standingsB = computeStandings(state.groupB, state.matchesB);
+      renderTable("tableGroupA", standingsA);
+      renderTable("tableGroupB", standingsB);
+      renderFixtures("fixturesGroupA", "matchesA", state.matchesA);
+      renderFixtures("fixturesGroupB", "matchesB", state.matchesB);
+      renderKnockout(standingsA, standingsB);
+      renderStats();
+    }
+
+    // Initialize
+    renderAll();
+    if (syncId) {
+      updateSyncUI(true);
+      pullCloudState();
+    }
+    // Poll every 3 seconds when in a live room so all 8 phones stay in sync
+    setInterval(pullCloudState, 3000);
+  </script>
+</body>
+</html>
