@@ -193,28 +193,20 @@
     let hostConn = null;
     let clientConns = [];
 
-    // STUN & TURN Servers to force connections through 4G/5G Firewalls
+    // PeerJS Config: Ping aggressively to stop the server dropping the connection
     const peerOptions = {
+      pingInterval: 5000, 
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
+          { urls: 'stun:stun1.l.google.com:19302' }
         ]
       }
     };
 
     function getHostPeerId(code) {
-      return `raf-darts-${code.toLowerCase()}-v5`; // Bumped to v5 to clear old cached rooms
+      // Unique namespace to prevent cache collisions
+      return `raf-hq-darts-${code.toLowerCase()}-v6`; 
     }
 
     function getActiveConfig() {
@@ -300,13 +292,20 @@
       updateBadge("amber", "Starting Host Server...");
       peer = new Peer(getHostPeerId(code), peerOptions);
 
-      peer.on("open", () => updateBadge("emerald", "Live Room Active (0 players)"));
+      peer.on("open", () => {
+        updateBadge("emerald", "Live Room Active (0 players)");
+      });
+
+      // CRITICAL FIX: Reconnect automatically if the server drops the host silently
+      peer.on("disconnected", () => {
+        updateBadge("amber", "Server dropped. Reconnecting...");
+        peer.reconnect();
+      });
 
       peer.on("connection", (conn) => {
         clientConns.push(conn);
         updateHostPlayerCount();
 
-        // Ghost connection cleanup: Drop the connection if it doesn't open fully in 5 seconds
         const ghostTimeout = setTimeout(() => {
           if (!conn.open) {
             clientConns = clientConns.filter(c => c !== conn);
@@ -391,15 +390,14 @@
 
         function tryConnect() {
           attempts++;
-          updateBadge("amber", `Connecting to Host (Attempt ${attempts}/3)...`);
+          updateBadge("amber", `Connecting to Host (Attempt ${attempts}/4)...`);
           
-          // Force unreliable UDP mode to bypass strict Wi-Fi firewalls
           const conn = peer.connect(getHostPeerId(code), { reliable: false });
           hostConn = conn;
 
           const timeout = setTimeout(() => {
             if (!isConnected) {
-              if (attempts < 3) {
+              if (attempts < 4) {
                 setTimeout(tryConnect, 1000);
               } else {
                 leaveRoom();
