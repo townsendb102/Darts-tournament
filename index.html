@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Live Darts Tournament Sync</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  
+  <!-- Firebase SDKs (v8 compat for simple drop-in) -->
+  <script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.5.0/firebase-database-compat.js"></script>
+
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
     body { font-family: 'Inter', sans-serif; }
@@ -183,31 +187,39 @@
 
   <script>
     // =========================================================================
+    // FIREBASE SETUP & INITIALIZATION
+    // =========================================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyBS7RIV6_W0fIIbLo2TzPEnOa9DsieyLHQ",
+      authDomain: "darts-tournament-5f224.firebaseapp.com",
+      
+      // I have added the databaseURL manually based on the EU location assumption. 
+      // If the app fails to connect entirely, change 'europe-west1.firebasedatabase.app' 
+      // to 'firebaseio.com' 
+      databaseURL: "https://darts-tournament-5f224-default-rtdb.europe-west1.firebasedatabase.app",
+      
+      projectId: "darts-tournament-5f224",
+      storageBucket: "darts-tournament-5f224.firebasestorage.app",
+      messagingSenderId: "1091890140440",
+      appId: "1:1091890140440:web:ddd280258739e2f7d1fa6d",
+      measurementId: "G-6KHDHCG546"
+    };
+
+    let db;
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+    } catch (e) {
+      console.error("Firebase Initialization Error:", e);
+    }
+
+    // =========================================================================
     // STATE & CONFIG
     // =========================================================================
     let roomCode = "";
     let state = {};
     let currentRole = null; 
-
-    let peer = null;
-    let hostConn = null;
-    let clientConns = [];
-
-    // PeerJS Config: Ping aggressively to stop the server dropping the connection
-    const peerOptions = {
-      pingInterval: 5000, 
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
-      }
-    };
-
-    function getHostPeerId(code) {
-      // Unique namespace to prevent cache collisions
-      return `raf-hq-darts-${code.toLowerCase()}-v6`; 
-    }
+    let dbRef = null;
 
     function getActiveConfig() {
       return state.config || { g: 2, q: 2, s: 3, f: 4 };
@@ -222,7 +234,7 @@
     }
 
     // =========================================================================
-    // INITIALIZATION & LOBBY LOGIC
+    // LOBBY LOGIC
     // =========================================================================
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -259,14 +271,25 @@
     }
 
     function leaveRoom() {
-      if (peer) { try { peer.destroy(); } catch(e){} }
+      if (dbRef) dbRef.off(); // Turn off Firebase listeners
       window.history.replaceState({}, "", window.location.pathname);
       showPhase('lobby');
     }
 
     // =========================================================================
-    // HOST LOGIC
+    // HOST & CLIENT FIREBASE LOGIC
     // =========================================================================
+    function monitorConnectionStatus() {
+      const connectedRef = db.ref(".info/connected");
+      connectedRef.on("value", (snap) => {
+        if (snap.val() === true) {
+          updateBadge("emerald", currentRole === 'host' ? "Live Room Active (Cloud)" : "Connected to Room!");
+        } else {
+          updateBadge("amber", "Connecting to Cloud...");
+        }
+      });
+    }
+
     function attemptHost() {
       const input = document.getElementById("lobbyRoomInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
       if (!input) return showError("Please enter a room code.");
@@ -282,86 +305,9 @@
       if (state.phase === 'setup') showPhase('setup');
       else { showPhase('tournament'); renderTournament(); }
 
-      initHostPeer(roomCode);
+      initFirebaseRoom();
     }
 
-    function initHostPeer(code) {
-      if (peer) try { peer.destroy(); } catch(e){}
-      clientConns = [];
-
-      updateBadge("amber", "Starting Host Server...");
-      peer = new Peer(getHostPeerId(code), peerOptions);
-
-      peer.on("open", () => {
-        updateBadge("emerald", "Live Room Active (0 players)");
-      });
-
-      // CRITICAL FIX: Reconnect automatically if the server drops the host silently
-      peer.on("disconnected", () => {
-        updateBadge("amber", "Server dropped. Reconnecting...");
-        peer.reconnect();
-      });
-
-      peer.on("connection", (conn) => {
-        clientConns.push(conn);
-        updateHostPlayerCount();
-
-        const ghostTimeout = setTimeout(() => {
-          if (!conn.open) {
-            clientConns = clientConns.filter(c => c !== conn);
-            updateHostPlayerCount();
-          }
-        }, 5000);
-
-        conn.on("open", () => {
-          clearTimeout(ghostTimeout);
-          conn.send({ type: "SYNC_STATE", state });
-        });
-
-        conn.on("data", (msg) => {
-          if (msg && msg.type === "REQUEST_STATE") {
-            conn.send({ type: "SYNC_STATE", state });
-          }
-          if (msg && msg.type === "SYNC_STATE" && msg.state) {
-            if ((msg.state.updatedAt || 0) > (state.updatedAt || 0)) {
-              state = msg.state;
-              saveLocal();
-              renderTournament();
-              broadcastToClients(conn);
-            }
-          }
-        });
-
-        conn.on("close", () => {
-          clientConns = clientConns.filter(c => c !== conn);
-          updateHostPlayerCount();
-        });
-        
-        conn.on("error", () => {
-          clientConns = clientConns.filter(c => c !== conn);
-          updateHostPlayerCount();
-        });
-      });
-
-      peer.on("error", (err) => {
-        if (err.type === "unavailable-id") {
-          showPhase('lobby');
-          showError(`Room "${code}" is active elsewhere. Join instead!`);
-        } else {
-          updateBadge("rose", "Network Error. Retrying...");
-          setTimeout(() => initHostPeer(code), 3000);
-        }
-      });
-    }
-
-    function updateHostPlayerCount() {
-      const activeCount = clientConns.filter(c => c.open).length;
-      updateBadge("emerald", `Live Room Active (${activeCount} players)`);
-    }
-
-    // =========================================================================
-    // CLIENT LOGIC
-    // =========================================================================
     function attemptJoin() {
       const input = document.getElementById("lobbyRoomInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
       if (!input) return showError("Please enter a room code.");
@@ -373,108 +319,75 @@
       window.history.replaceState({}, "", `?room=${roomCode}&join=true`);
 
       showPhase('tournament');
-      document.getElementById("tournamentPhase").innerHTML = `<div class="text-center text-slate-400 mt-10">Connecting to Host...</div>`;
+      document.getElementById("tournamentPhase").innerHTML = `<div class="text-center text-slate-400 mt-10">Connecting to Cloud Server...</div>`;
 
-      initClientPeer(roomCode);
-    }
-
-    function initClientPeer(code) {
-      if (peer) try { peer.destroy(); } catch(e){}
-      
-      updateBadge("amber", "Connecting to Host...");
-      peer = new Peer(peerOptions);
-
-      peer.on("open", () => {
-        let attempts = 0;
-        let isConnected = false;
-
-        function tryConnect() {
-          attempts++;
-          updateBadge("amber", `Connecting to Host (Attempt ${attempts}/4)...`);
-          
-          const conn = peer.connect(getHostPeerId(code), { reliable: false });
-          hostConn = conn;
-
-          const timeout = setTimeout(() => {
-            if (!isConnected) {
-              if (attempts < 4) {
-                setTimeout(tryConnect, 1000);
-              } else {
-                leaveRoom();
-                showError(`Could not reach Host "${code}". The Wi-Fi firewall is actively blocking the connection.`);
-              }
-            }
-          }, 6000);
-
-          conn.on("open", () => {
-            isConnected = true;
-            clearTimeout(timeout);
-            updateBadge("emerald", "Connected to Host!");
-            conn.send({ type: "REQUEST_STATE" }); 
-          });
-
-          conn.on("data", (msg) => {
-            if (msg && msg.type === "SYNC_STATE" && msg.state) {
-              if (document.getElementById("groupsGrid") == null) {
-                document.getElementById("tournamentPhase").innerHTML = `
-                  <section id="groupsGrid" class="grid md:grid-cols-2 gap-6"></section>
-                  <section id="fixturesGrid" class="grid md:grid-cols-2 gap-6"></section>
-                  <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
-                    <h2 class="font-extrabold text-lg text-amber-400 print-text mb-4">🏆 KNOCKOUT STAGE</h2>
-                    <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" id="knockoutContainer"></div>
-                  </section>
-                  <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
-                    <h2 class="font-bold text-base text-purple-400 mb-3 print-text">🔥 180s & Highest Checkout Tracker</h2>
-                    <div id="statsGrid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"></div>
-                  </section>`;
-              }
-              state = msg.state;
-              renderTournament();
-            }
-          });
-
-          conn.on("close", () => {
-            isConnected = false;
-            updateBadge("rose", "Host Disconnected");
-          });
-        }
-
-        tryConnect();
-      });
-
-      peer.on("error", (err) => {
-        if (err.type === "peer-unavailable") {
+      // Check if room exists before fully joining
+      db.ref('rooms/' + roomCode).once('value').then((snapshot) => {
+        if (!snapshot.exists()) {
           leaveRoom();
-          showError(`Host "${code}" is not active. Make sure the Host has created the room first.`);
+          showError(`Room "${roomCode}" does not exist. The Host must create it first.`);
         } else {
-          updateBadge("rose", "Network Error");
+          // Rebuild DOM if empty
+          if (document.getElementById("groupsGrid") == null) {
+            document.getElementById("tournamentPhase").innerHTML = `
+              <section id="groupsGrid" class="grid md:grid-cols-2 gap-6"></section>
+              <section id="fixturesGrid" class="grid md:grid-cols-2 gap-6"></section>
+              <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+                <h2 class="font-extrabold text-lg text-amber-400 print-text mb-4">🏆 KNOCKOUT STAGE</h2>
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" id="knockoutContainer"></div>
+              </section>
+              <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+                <h2 class="font-bold text-base text-purple-400 mb-3 print-text">🔥 180s & Highest Checkout Tracker</h2>
+                <div id="statsGrid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"></div>
+              </section>`;
+          }
+          state = snapshot.val();
+          saveLocal();
+          renderTournament();
+          initFirebaseRoom();
         }
       });
     }
 
-    // =========================================================================
-    // SYNC UTILITIES
-    // =========================================================================
+    function initFirebaseRoom() {
+      monitorConnectionStatus();
+      dbRef = db.ref('rooms/' + roomCode);
+
+      // If Host, immediately claim the room in the DB
+      if (currentRole === 'host') {
+        dbRef.set(state).catch(err => showError("Database Error: Check Firebase Rules"));
+      }
+
+      // Listen for changes from anyone else
+      dbRef.on('value', (snapshot) => {
+        const cloudState = snapshot.val();
+        if (cloudState && cloudState.updatedAt > (state.updatedAt || 0)) {
+          state = cloudState;
+          saveLocal();
+          if (state.phase === 'active') {
+            showPhase('tournament');
+            renderTournament();
+          }
+        }
+      });
+    }
+
     function updateBadge(color, text) {
       document.getElementById("syncIndicator").className = `inline-block w-2.5 h-2.5 rounded-full bg-${color}-400 animate-pulse`;
       document.getElementById("syncStatusText").textContent = text;
     }
 
     function saveLocal() {
-      if (currentRole === 'host') localStorage.setItem("darts_state_" + roomCode, JSON.stringify(state));
-    }
-
-    function broadcastToClients(excludeConn = null) {
-      clientConns.forEach(c => { if (c !== excludeConn && c.open) c.send({ type: "SYNC_STATE", state }); });
+      localStorage.setItem("darts_state_" + roomCode, JSON.stringify(state));
     }
 
     function pushStateUpdate() {
       state.updatedAt = Date.now();
       saveLocal();
       renderTournament();
-
-      if (currentRole === 'host') broadcastToClients();
-      else if (currentRole === 'client' && hostConn && hostConn.open) hostConn.send({ type: "SYNC_STATE", state });
+      
+      // Push immediately to cloud so all connected clients see it
+      if (dbRef) dbRef.set(state);
     }
 
     // =========================================================================
