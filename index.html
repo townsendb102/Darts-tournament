@@ -304,6 +304,9 @@
         conn.on("open", () => conn.send({ type: "SYNC_STATE", state }));
 
         conn.on("data", (msg) => {
+          if (msg && msg.type === "REQUEST_STATE") {
+            conn.send({ type: "SYNC_STATE", state });
+          }
           if (msg && msg.type === "SYNC_STATE" && msg.state) {
             if ((msg.state.updatedAt || 0) > (state.updatedAt || 0)) {
               state = msg.state;
@@ -357,48 +360,67 @@
       peer = new Peer(peerOptions);
 
       peer.on("open", () => {
-        const conn = peer.connect(getHostPeerId(code));
-        hostConn = conn;
+        let attempts = 0;
+        let isConnected = false;
 
-        const timeout = setTimeout(() => {
-          if (!conn.open) {
-            leaveRoom();
-            showError(`Could not find Host for "${code}".`);
-          }
-        }, 8000);
+        function tryConnect() {
+          attempts++;
+          updateBadge("amber", `Connecting to Host (Attempt ${attempts}/3)...`);
+          
+          const conn = peer.connect(getHostPeerId(code));
+          hostConn = conn;
 
-        conn.on("open", () => {
-          clearTimeout(timeout);
-          updateBadge("emerald", "Connected to Host!");
-        });
-
-        conn.on("data", (msg) => {
-          if (msg && msg.type === "SYNC_STATE" && msg.state) {
-            if (document.getElementById("groupsGrid") == null) {
-              document.getElementById("tournamentPhase").innerHTML = `
-                <section id="groupsGrid" class="grid md:grid-cols-2 gap-6"></section>
-                <section id="fixturesGrid" class="grid md:grid-cols-2 gap-6"></section>
-                <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
-                  <h2 class="font-extrabold text-lg text-amber-400 print-text mb-4">🏆 KNOCKOUT STAGE</h2>
-                  <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" id="knockoutContainer"></div>
-                </section>
-                <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
-                  <h2 class="font-bold text-base text-purple-400 mb-3 print-text">🔥 180s & Highest Checkout Tracker</h2>
-                  <div id="statsGrid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"></div>
-                </section>`;
+          const timeout = setTimeout(() => {
+            if (!isConnected) {
+              if (attempts < 3) {
+                setTimeout(tryConnect, 1000);
+              } else {
+                leaveRoom();
+                showError(`Could not find Host "${code}". Ensure the host's screen is on and on the same Wi-Fi.`);
+              }
             }
-            state = msg.state;
-            renderTournament();
-          }
-        });
+          }, 7000);
 
-        conn.on("close", () => updateBadge("rose", "Host Disconnected"));
+          conn.on("open", () => {
+            isConnected = true;
+            clearTimeout(timeout);
+            updateBadge("emerald", "Connected to Host!");
+            conn.send({ type: "REQUEST_STATE" }); 
+          });
+
+          conn.on("data", (msg) => {
+            if (msg && msg.type === "SYNC_STATE" && msg.state) {
+              if (document.getElementById("groupsGrid") == null) {
+                document.getElementById("tournamentPhase").innerHTML = `
+                  <section id="groupsGrid" class="grid md:grid-cols-2 gap-6"></section>
+                  <section id="fixturesGrid" class="grid md:grid-cols-2 gap-6"></section>
+                  <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+                    <h2 class="font-extrabold text-lg text-amber-400 print-text mb-4">🏆 KNOCKOUT STAGE</h2>
+                    <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" id="knockoutContainer"></div>
+                  </section>
+                  <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+                    <h2 class="font-bold text-base text-purple-400 mb-3 print-text">🔥 180s & Highest Checkout Tracker</h2>
+                    <div id="statsGrid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"></div>
+                  </section>`;
+              }
+              state = msg.state;
+              renderTournament();
+            }
+          });
+
+          conn.on("close", () => {
+            isConnected = false;
+            updateBadge("rose", "Host Disconnected");
+          });
+        }
+
+        tryConnect();
       });
 
       peer.on("error", (err) => {
         if (err.type === "peer-unavailable") {
           leaveRoom();
-          showError(`Host "${code}" is offline or does not exist.`);
+          showError(`Host "${code}" is not active. Make sure the Host has created the room first.`);
         } else {
           updateBadge("rose", "Network Error");
         }
