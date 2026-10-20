@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dynamic Darts Tournament — Live Sync Tracker</title>
+  <title>Live Darts Tournament Sync</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- PeerJS for instant device-to-device real-time sync (no CORS blocking) -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
@@ -27,33 +26,31 @@
 <body class="bg-slate-950 text-slate-100 min-h-screen pb-16">
 
   <!-- TOP BAR -->
-  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 no-print">
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 no-print hidden" id="mainHeader">
     <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-3">
-        <span class="text-2xl">🎯</span>
+        <span class="text-2xl" onclick="leaveRoom()" style="cursor:pointer;" title="Leave Room">🎯</span>
         <div>
-          <h1 class="font-extrabold text-lg tracking-tight text-white">Live Darts Night</h1>
+          <div class="flex items-center gap-2">
+            <h1 class="font-extrabold text-lg tracking-tight text-white">Live Darts: <span id="headerRoomCode" class="text-emerald-400"></span></h1>
+            <span id="roleBadge" class="bg-slate-800 text-slate-300 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"></span>
+          </div>
           <div class="flex items-center gap-2 text-xs text-slate-400">
             <span id="syncIndicator" class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
-            <span id="syncStatusText">Connecting to Live Room...</span>
+            <span id="syncStatusText">Connecting...</span>
           </div>
         </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <div class="flex items-center bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs">
-          <span class="text-slate-400 mr-1.5">Room:</span>
-          <input id="roomCodeInput" value="ARROWS8" onchange="changeRoomCode(this.value)"
-            class="w-20 bg-transparent font-extrabold text-emerald-400 uppercase focus:outline-none" />
-        </div>
         <button onclick="openShareModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3.5 py-2 rounded-lg transition shadow">
-          📲 Share Link / QR
+          📲 Share / QR
         </button>
         <button onclick="window.print()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-3 py-2 rounded-lg border border-slate-700">
-          🖨️ Print Sheet
+          🖨️ Print
         </button>
-        <button onclick="resetTournament()" class="bg-rose-950/60 hover:bg-rose-900 text-rose-300 font-semibold text-xs px-3 py-2 rounded-lg border border-rose-800/60">
-          New Tournament
+        <button onclick="leaveRoom()" class="bg-rose-950/60 hover:bg-rose-900 text-rose-300 font-semibold text-xs px-3 py-2 rounded-lg border border-rose-800/60">
+          Leave Room
         </button>
       </div>
     </div>
@@ -62,25 +59,86 @@
   <!-- PRINT HEADER -->
   <div class="hidden print:block text-center py-4 border-b-2 border-black mb-4">
     <h1 class="text-2xl font-bold">DARTS TOURNAMENT — GROUP & KNOCKOUT SHEET</h1>
-    <p class="text-sm">Group Stage: Best of 3 | Quarter-Finals: Best of 3 | Semi-Finals: Best of 5 | Final: Best of 7</p>
+    <p id="printHeaderSubtitle" class="text-sm font-semibold text-gray-700"></p>
   </div>
 
   <main class="max-w-6xl mx-auto px-4 pt-6">
 
-    <!-- SETUP PHASE -->
+    <!-- LOBBY PHASE -->
+    <div id="lobbyPhase" class="max-w-md mx-auto mt-12 bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl text-center">
+      <div class="text-6xl mb-4">🎯</div>
+      <h2 class="text-3xl font-extrabold text-white mb-2">Live Darts Sync</h2>
+      <p class="text-sm text-slate-400 mb-8">Host a tournament or join an existing one.</p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1 text-left uppercase tracking-wider">Room Name / Code</label>
+          <input id="lobbyRoomInput" value="ARROWS8" placeholder="e.g. FRIDAY"
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-center font-extrabold text-xl text-emerald-400 uppercase focus:outline-none focus:border-emerald-500 transition" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3 pt-4">
+          <button onclick="attemptJoin()" class="bg-sky-600 hover:bg-sky-500 text-white font-bold py-3 px-4 rounded-xl transition shadow">
+            Join Room
+          </button>
+          <button onclick="attemptHost()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl transition shadow">
+            Host Room
+          </button>
+        </div>
+      </div>
+      
+      <p id="lobbyError" class="mt-4 text-sm font-bold text-rose-400 hidden"></p>
+    </div>
+
+    <!-- SETUP PHASE (Host Only) -->
     <div id="setupPhase" class="max-w-xl mx-auto mt-8 bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg hidden">
       <h2 class="text-2xl font-extrabold text-white mb-2 text-center">Tournament Setup</h2>
-      <p class="text-sm text-slate-400 mb-4 text-center">Enter player names below (one per line). Up to 16 players.</p>
+      <p class="text-sm text-slate-400 mb-6 text-center">Enter players & choose match lengths.</p>
       
-      <div class="bg-slate-950/50 rounded-lg p-3 mb-6 text-xs text-slate-400 border border-slate-800 flex justify-between">
-        <span><b class="text-emerald-400">2-4</b> Players: 1 Group</span>
-        <span><b class="text-emerald-400">5-8</b> Players: 2 Groups</span>
-        <span><b class="text-emerald-400">9-16</b> Players: 4 Groups</span>
-      </div>
+      <textarea id="playerInput" rows="8" 
+        class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white mb-6 font-semibold focus:outline-none focus:border-emerald-500" 
+        placeholder="Player 1&#10;Player 2&#10;Player 3... (Up to 16)"></textarea>
 
-      <textarea id="playerInput" rows="10" 
-        class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-white mb-4 font-semibold focus:outline-none focus:border-emerald-500" 
-        placeholder="Player 1&#10;Player 2&#10;Player 3..."></textarea>
+      <!-- FORMAT SETTINGS -->
+      <h3 class="text-sm font-extrabold text-white mb-3 border-b border-slate-700 pb-2">Match Formats</h3>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">Groups</label>
+          <select id="cfgGroup" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500">
+            <option value="2">Best of 3</option>
+            <option value="3">Best of 5</option>
+            <option value="4">Best of 7</option>
+            <option value="6">Best of 10/11</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">Quarters</label>
+          <select id="cfgQF" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500">
+            <option value="2">Best of 3</option>
+            <option value="3">Best of 5</option>
+            <option value="4">Best of 7</option>
+            <option value="6">Best of 10/11</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">Semis</label>
+          <select id="cfgSF" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500">
+            <option value="2">Best of 3</option>
+            <option value="3" selected>Best of 5</option>
+            <option value="4">Best of 7</option>
+            <option value="6">Best of 10/11</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">Final</label>
+          <select id="cfgFinal" class="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-sm text-white focus:border-emerald-500">
+            <option value="2">Best of 3</option>
+            <option value="3">Best of 5</option>
+            <option value="4" selected>Best of 7</option>
+            <option value="6">Best of 10/11</option>
+          </select>
+        </div>
+      </div>
       
       <button onclick="startTournament()" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-lg text-lg transition shadow">
         Generate Tournament
@@ -89,42 +147,32 @@
 
     <!-- TOURNAMENT PHASE -->
     <div id="tournamentPhase" class="space-y-8 hidden">
-      
-      <!-- GROUP TABLES -->
       <section id="groupsGrid" class="grid md:grid-cols-2 gap-6"></section>
-
-      <!-- GROUP FIXTURES -->
       <section id="fixturesGrid" class="grid md:grid-cols-2 gap-6"></section>
-
-      <!-- KNOCKOUT FINALS -->
       <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
-        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <h2 class="font-extrabold text-lg text-amber-400 print-text">🏆 KNOCKOUT STAGE</h2>
-        </div>
+        <h2 class="font-extrabold text-lg text-amber-400 print-text mb-4">🏆 KNOCKOUT STAGE</h2>
         <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" id="knockoutContainer"></div>
       </section>
-
-      <!-- SIDE POT: 180s & HIGH CHECKOUT -->
       <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
         <h2 class="font-bold text-base text-purple-400 mb-3 print-text">🔥 180s & Highest Checkout Tracker</h2>
         <div id="statsGrid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"></div>
       </section>
-
     </div>
+
   </main>
 
   <!-- SHARE / QR MODAL -->
   <div id="shareModal" class="fixed inset-0 bg-black/75 hidden items-center justify-center p-4 z-50 no-print">
     <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 text-center space-y-4">
-      <h3 class="text-lg font-bold text-white">📲 Share Live Scoreboard</h3>
-      <p class="text-xs text-slate-300">Anyone opening this link or scanning the QR code connects straight to Room <span id="modalRoomLabel" class="font-bold text-emerald-400">ARROWS8</span> and syncs in real time.</p>
+      <h3 class="text-lg font-bold text-white">📲 Invite Players to Score</h3>
+      <p class="text-xs text-slate-300">Scan the QR or share the link. Devices will auto-connect to Room <span id="modalRoomLabel" class="font-bold text-emerald-400"></span>.</p>
       <div class="flex justify-center">
         <img id="qrImage" class="w-44 h-44 rounded-lg border-4 border-white bg-white" alt="QR Code" />
       </div>
       <input id="shareUrlInput" readonly class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 text-center" />
       <div class="flex gap-2 justify-center">
         <button onclick="copyShareLink()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-lg">
-          📋 Copy WhatsApp Link
+          📋 Copy Link
         </button>
         <button onclick="closeShareModal()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs px-4 py-2.5 rounded-lg">
           Close
@@ -135,23 +183,17 @@
 
   <script>
     // =========================================================================
-    // STATE MANAGEMENT
+    // STATE & CONFIG
     // =========================================================================
-    const urlParams = new URLSearchParams(window.location.search);
-    let roomCode = (urlParams.get("room") || "ARROWS8").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    document.getElementById("roomCodeInput").value = roomCode;
+    let roomCode = "";
+    let state = {};
+    let currentRole = null; // 'host' or 'client'
 
-    let state = JSON.parse(localStorage.getItem("darts_state_" + roomCode)) || { phase: 'setup', updatedAt: 0 };
-
-    // =========================================================================
-    // REAL-TIME WEBRTC (PeerJS) HUB + SPOKE SYNC ENGINE
-    // =========================================================================
+    // PeerJS Networking Variables
     let peer = null;
-    let isHost = false;
     let hostConn = null;
     let clientConns = [];
 
-    // Add multiple STUN servers to punch through strict mobile network NATs
     const peerOptions = {
       config: {
         iceServers: [
@@ -163,189 +205,254 @@
       }
     };
 
-    function getHostPeerId() {
-      return `raf-darts-hub-${roomCode.toLowerCase()}-v3`;
+    function getHostPeerId(code) {
+      return `raf-darts-${code.toLowerCase()}-v4`;
     }
 
-    function initLiveSync() {
-      if (peer) {
-        try { peer.destroy(); } catch (e) {}
-      }
-      clientConns = [];
-      hostConn = null;
-      isHost = false;
+    function getActiveConfig() {
+      // Fallback for older saves before config was added
+      return state.config || { g: 2, q: 2, s: 3, f: 4 };
+    }
 
-      const hostId = getHostPeerId();
-      
-      // Pass the STUN config into the Host peer
-      const tryHost = new Peer(hostId, peerOptions);
+    function getFormatLabel(legsToWin) {
+      if (legsToWin === 2) return "Best of 3";
+      if (legsToWin === 3) return "Best of 5";
+      if (legsToWin === 4) return "Best of 7";
+      if (legsToWin === 6) return "Best of 10/11";
+      return `First to ${legsToWin}`;
+    }
 
-      tryHost.on("open", () => {
-        peer = tryHost;
-        isHost = true;
-        updateSyncBadge("host", 1);
+    // =========================================================================
+    // INITIALIZATION & LOBBY LOGIC
+    // =========================================================================
+    window.onload = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlRoom = urlParams.get("room");
+      const urlJoin = urlParams.get("join");
 
-        peer.on("connection", (conn) => {
-          clientConns.push(conn);
-          updateSyncBadge("host", clientConns.length + 1);
-
-          conn.on("open", () => {
-            conn.send({ type: "SYNC_STATE", state });
-          });
-
-          conn.on("data", (msg) => {
-            if (msg && msg.type === "SYNC_STATE" && msg.state) {
-              if ((msg.state.updatedAt || 0) >= (state.updatedAt || 0)) {
-                state = msg.state;
-                saveLocal();
-                renderAll();
-                broadcastToClients(conn);
-              } else {
-                conn.send({ type: "SYNC_STATE", state });
-              }
-            }
-          });
-
-          conn.on("close", () => {
-            clientConns = clientConns.filter(c => c !== conn);
-            updateSyncBadge("host", clientConns.length + 1);
-          });
-        });
-      });
-
-      tryHost.on("error", (err) => {
-        if (err.type === "unavailable-id") {
-          connectAsClient(hostId);
-        } else {
-          updateSyncBadge("retry");
-          setTimeout(initLiveSync, 4000);
+      if (urlRoom) {
+        document.getElementById("lobbyRoomInput").value = urlRoom;
+        if (urlJoin === "true") {
+          attemptJoin();
         }
-      });
+      }
+      showPhase('lobby');
+    };
+
+    function showError(msg) {
+      const errEl = document.getElementById("lobbyError");
+      errEl.textContent = msg;
+      errEl.classList.remove("hidden");
+      setTimeout(() => errEl.classList.add("hidden"), 5000);
     }
 
-    function connectAsClient(hostId) {
-      // Pass the STUN config into the Client peer
-      const clientPeer = new Peer(peerOptions);
-      peer = clientPeer;
-      isHost = false;
+    function showPhase(phase) {
+      document.getElementById("lobbyPhase").classList.add("hidden");
+      document.getElementById("setupPhase").classList.add("hidden");
+      document.getElementById("tournamentPhase").classList.add("hidden");
+      document.getElementById("mainHeader").classList.add("hidden");
 
-      clientPeer.on("open", () => {
-        // Update UI so the user knows it reached the signaling server
-        document.getElementById("syncStatusText").textContent = "Negotiating P2P connection...";
-        
-        // Remove { reliable: true } which causes silent hangups in modern WebRTC
-        const conn = clientPeer.connect(hostId);
-        hostConn = conn;
+      if (phase === 'lobby') {
+        document.getElementById("lobbyPhase").classList.remove("hidden");
+      } else {
+        document.getElementById("mainHeader").classList.remove("hidden");
+        if (phase === 'setup') document.getElementById("setupPhase").classList.remove("hidden");
+        if (phase === 'tournament') document.getElementById("tournamentPhase").classList.remove("hidden");
+      }
+    }
 
-        // Fallback: If WebRTC fails to punch through, retry instead of hanging forever
-        const connectionTimeout = setTimeout(() => {
-          if (!conn.open) {
-            updateSyncBadge("retry");
-            initLiveSync();
-          }
-        }, 8000);
+    function leaveRoom() {
+      if (peer) { try { peer.destroy(); } catch(e){} }
+      window.history.replaceState({}, "", window.location.pathname);
+      showPhase('lobby');
+    }
 
-        conn.on("open", () => {
-          clearTimeout(connectionTimeout); // Connection succeeded, cancel the timeout
-          updateSyncBadge("client");
-          if (state.updatedAt > 0) {
-            conn.send({ type: "SYNC_STATE", state });
-          }
-        });
+    // =========================================================================
+    // HOST LOGIC
+    // =========================================================================
+    function attemptHost() {
+      const input = document.getElementById("lobbyRoomInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (!input) return showError("Please enter a room code.");
+      
+      roomCode = input;
+      currentRole = 'host';
+      document.getElementById("headerRoomCode").textContent = roomCode;
+      document.getElementById("roleBadge").textContent = "HOST";
+      window.history.replaceState({}, "", `?room=${roomCode}`);
+
+      state = JSON.parse(localStorage.getItem("darts_state_" + roomCode)) || { phase: 'setup', updatedAt: 0 };
+      
+      if (state.phase === 'setup') showPhase('setup');
+      else { showPhase('tournament'); renderTournament(); }
+
+      initHostPeer(roomCode);
+    }
+
+    function initHostPeer(code) {
+      if (peer) try { peer.destroy(); } catch(e){}
+      clientConns = [];
+
+      updateBadge("amber", "Starting Host Server...");
+      peer = new Peer(getHostPeerId(code), peerOptions);
+
+      peer.on("open", () => updateBadge("emerald", "Live Room Active (0 players)"));
+
+      peer.on("connection", (conn) => {
+        clientConns.push(conn);
+        updateBadge("emerald", `Live Room Active (${clientConns.length} players)`);
+
+        conn.on("open", () => conn.send({ type: "SYNC_STATE", state }));
 
         conn.on("data", (msg) => {
           if (msg && msg.type === "SYNC_STATE" && msg.state) {
-            if ((msg.state.updatedAt || 0) >= (state.updatedAt || 0)) {
+            if ((msg.state.updatedAt || 0) > (state.updatedAt || 0)) {
               state = msg.state;
               saveLocal();
-              renderAll();
+              renderTournament();
+              broadcastToClients(conn);
             }
           }
         });
 
         conn.on("close", () => {
-          updateSyncBadge("retry");
-          setTimeout(initLiveSync, 2000);
+          clientConns = clientConns.filter(c => c !== conn);
+          updateBadge("emerald", `Live Room Active (${clientConns.length} players)`);
         });
       });
 
-      clientPeer.on("error", () => {
-        updateSyncBadge("retry");
-        setTimeout(initLiveSync, 4000);
+      peer.on("error", (err) => {
+        if (err.type === "unavailable-id") {
+          showPhase('lobby');
+          showError(`Room "${code}" is active elsewhere. Join instead!`);
+        } else {
+          updateBadge("rose", "Network Error. Retrying...");
+          setTimeout(() => initHostPeer(code), 3000);
+        }
       });
     }
 
-    function broadcastToClients(excludeConn = null) {
-      clientConns.forEach(c => {
-        if (c !== excludeConn && c.open) c.send({ type: "SYNC_STATE", state });
+    // =========================================================================
+    // CLIENT LOGIC
+    // =========================================================================
+    function attemptJoin() {
+      const input = document.getElementById("lobbyRoomInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (!input) return showError("Please enter a room code.");
+      
+      roomCode = input;
+      currentRole = 'client';
+      document.getElementById("headerRoomCode").textContent = roomCode;
+      document.getElementById("roleBadge").textContent = "CLIENT";
+      window.history.replaceState({}, "", `?room=${roomCode}&join=true`);
+
+      showPhase('tournament');
+      document.getElementById("tournamentPhase").innerHTML = `<div class="text-center text-slate-400 mt-10">Connecting to Host...</div>`;
+
+      initClientPeer(roomCode);
+    }
+
+    function initClientPeer(code) {
+      if (peer) try { peer.destroy(); } catch(e){}
+      
+      updateBadge("amber", "Connecting to Host...");
+      peer = new Peer(peerOptions);
+
+      peer.on("open", () => {
+        const conn = peer.connect(getHostPeerId(code));
+        hostConn = conn;
+
+        const timeout = setTimeout(() => {
+          if (!conn.open) {
+            leaveRoom();
+            showError(`Could not find Host for "${code}".`);
+          }
+        }, 8000);
+
+        conn.on("open", () => {
+          clearTimeout(timeout);
+          updateBadge("emerald", "Connected to Host!");
+        });
+
+        conn.on("data", (msg) => {
+          if (msg && msg.type === "SYNC_STATE" && msg.state) {
+            if (document.getElementById("groupsGrid") == null) {
+              document.getElementById("tournamentPhase").innerHTML = `
+                <section id="groupsGrid" class="grid md:grid-cols-2 gap-6"></section>
+                <section id="fixturesGrid" class="grid md:grid-cols-2 gap-6"></section>
+                <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+                  <h2 class="font-extrabold text-lg text-amber-400 print-text mb-4">🏆 KNOCKOUT STAGE</h2>
+                  <div class="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5" id="knockoutContainer"></div>
+                </section>
+                <section class="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg print-card">
+                  <h2 class="font-bold text-base text-purple-400 mb-3 print-text">🔥 180s & Highest Checkout Tracker</h2>
+                  <div id="statsGrid" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3"></div>
+                </section>`;
+            }
+            state = msg.state;
+            renderTournament();
+          }
+        });
+
+        conn.on("close", () => updateBadge("rose", "Host Disconnected"));
       });
+
+      peer.on("error", (err) => {
+        if (err.type === "peer-unavailable") {
+          leaveRoom();
+          showError(`Host "${code}" is offline or does not exist.`);
+        } else {
+          updateBadge("rose", "Network Error");
+        }
+      });
+    }
+
+    // =========================================================================
+    // SYNC UTILITIES
+    // =========================================================================
+    function updateBadge(color, text) {
+      document.getElementById("syncIndicator").className = `inline-block w-2.5 h-2.5 rounded-full bg-${color}-400 animate-pulse`;
+      document.getElementById("syncStatusText").textContent = text;
+    }
+
+    function saveLocal() {
+      if (currentRole === 'host') localStorage.setItem("darts_state_" + roomCode, JSON.stringify(state));
+    }
+
+    function broadcastToClients(excludeConn = null) {
+      clientConns.forEach(c => { if (c !== excludeConn && c.open) c.send({ type: "SYNC_STATE", state }); });
     }
 
     function pushStateUpdate() {
       state.updatedAt = Date.now();
       saveLocal();
-      renderAll();
-      if (isHost) broadcastToClients();
-      else if (hostConn && hostConn.open) hostConn.send({ type: "SYNC_STATE", state });
-    }
+      renderTournament();
 
-    function saveLocal() {
-      localStorage.setItem("darts_state_" + roomCode, JSON.stringify(state));
-    }
-
-    function updateSyncBadge(mode, count = 1) {
-      const dot = document.getElementById("syncIndicator");
-      const txt = document.getElementById("syncStatusText");
-      if (mode === "host") {
-        dot.className = "inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
-        txt.textContent = `Live Room Active (${count} synced)`;
-      } else if (mode === "client") {
-        dot.className = "inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse";
-        txt.textContent = `Connected Live`;
-      } else {
-        dot.className = "inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse";
-        txt.textContent = `Reconnecting...`;
-      }
-    }
-
-    function changeRoomCode(newCode) {
-      roomCode = (newCode || "ARROWS8").toUpperCase().replace(/[^A-Z0-9]/g, "") || "ARROWS8";
-      document.getElementById("roomCodeInput").value = roomCode;
-      window.history.replaceState({}, "", `${window.location.pathname}?room=${roomCode}`);
-      state = JSON.parse(localStorage.getItem("darts_state_" + roomCode)) || { phase: 'setup', updatedAt: 0 };
-      renderAll();
-      initLiveSync();
+      if (currentRole === 'host') broadcastToClients();
+      else if (currentRole === 'client' && hostConn && hostConn.open) hostConn.send({ type: "SYNC_STATE", state });
     }
 
     // =========================================================================
-    // TOURNAMENT GENERATION
+    // TOURNAMENT LOGIC
     // =========================================================================
     function startTournament() {
       const text = document.getElementById("playerInput").value;
       const lines = text.split('\n').map(l => l.trim()).filter(l => l);
       
-      if (lines.length < 2 || lines.length > 16) {
-        return alert("Please enter between 2 and 16 players.");
-      }
+      if (lines.length < 2 || lines.length > 16) return alert("Please enter between 2 and 16 players.");
       
       const numGroups = lines.length > 8 ? 4 : (lines.length > 4 ? 2 : 1);
       const groupNames = ['A', 'B', 'C', 'D'].slice(0, numGroups);
       
-      state = {
-        phase: 'active',
-        updatedAt: Date.now(),
-        players: lines,
-        groups: {},
-        matches: {},
-        knockout: { final: { s1: 0, s2: 0, max: 4 } },
-        stats: {}
+      const cfg = {
+        g: parseInt(document.getElementById("cfgGroup").value),
+        q: parseInt(document.getElementById("cfgQF").value),
+        s: parseInt(document.getElementById("cfgSF").value),
+        f: parseInt(document.getElementById("cfgFinal").value)
       };
 
-      // Initialize groups
+      state = { phase: 'active', updatedAt: Date.now(), players: lines, config: cfg, groups: {}, matches: {}, knockout: { final: { s1: 0, s2: 0, max: cfg.f } }, stats: {} };
       groupNames.forEach(g => state.groups[g] = []);
       lines.forEach((p, i) => state.groups[groupNames[i % numGroups]].push(p));
 
-      // Generate group matches (Round Robin)
       groupNames.forEach(g => {
         const pArr = state.groups[g];
         const m = [];
@@ -358,93 +465,58 @@
         state.matches[g] = m;
       });
 
-      // Setup knockout tree sizes
-      if (numGroups >= 2) {
-        state.knockout.sf1 = { s1: 0, s2: 0, max: 3 };
-        state.knockout.sf2 = { s1: 0, s2: 0, max: 3 };
-      }
+      if (numGroups >= 2) { state.knockout.sf1 = { s1: 0, s2: 0, max: cfg.s }; state.knockout.sf2 = { s1: 0, s2: 0, max: cfg.s }; }
       if (numGroups === 4) {
-        state.knockout.qf1 = { s1: 0, s2: 0, max: 2 };
-        state.knockout.qf2 = { s1: 0, s2: 0, max: 2 };
-        state.knockout.qf3 = { s1: 0, s2: 0, max: 2 };
-        state.knockout.qf4 = { s1: 0, s2: 0, max: 2 };
+        state.knockout.qf1 = { s1: 0, s2: 0, max: cfg.q }; state.knockout.qf2 = { s1: 0, s2: 0, max: cfg.q };
+        state.knockout.qf3 = { s1: 0, s2: 0, max: cfg.q }; state.knockout.qf4 = { s1: 0, s2: 0, max: cfg.q };
       }
-
       lines.forEach(p => state.stats[p] = { maxes: 0, highOut: 0 });
 
+      showPhase('tournament');
       pushStateUpdate();
     }
 
-    function resetTournament() {
-      if (!confirm("Delete this entire tournament and start fresh?")) return;
-      state = { phase: 'setup', updatedAt: Date.now() };
-      pushStateUpdate();
-    }
-
-    // =========================================================================
-    // STANDINGS CALCULATION
-    // =========================================================================
-    function computeStandings(players, matches) {
+    function computeStandings(players, matches, reqToWin) {
       const map = {};
       players.forEach(p => { map[p] = { name: p, P: 0, W: 0, L: 0, LW: 0, LL: 0, LD: 0, Pts: 0 }; });
-
       matches.forEach(m => {
-        const s1 = Number(m.s1) || 0;
-        const s2 = Number(m.s2) || 0;
+        const s1 = Number(m.s1) || 0, s2 = Number(m.s2) || 0;
         if (s1 === 0 && s2 === 0) return;
-        map[m.p1].LW += s1;
-        map[m.p1].LL += s2;
-        map[m.p2].LW += s2;
-        map[m.p2].LL += s1;
-
-        if (s1 >= 2 || s2 >= 2) {
-          map[m.p1].P += 1;
-          map[m.p2].P += 1;
+        map[m.p1].LW += s1; map[m.p1].LL += s2;
+        map[m.p2].LW += s2; map[m.p2].LL += s1;
+        if (s1 >= reqToWin || s2 >= reqToWin) {
+          map[m.p1].P += 1; map[m.p2].P += 1;
           if (s1 > s2) { map[m.p1].W += 1; map[m.p1].Pts += 2; map[m.p2].L += 1; }
           else if (s2 > s1) { map[m.p2].W += 1; map[m.p2].Pts += 2; map[m.p1].L += 1; }
         }
       });
-
       Object.values(map).forEach(r => { r.LD = r.LW - r.LL; });
-
       return Object.values(map).sort((a, b) => {
         if (b.Pts !== a.Pts) return b.Pts - a.Pts;
         if (b.LD !== a.LD) return b.LD - a.LD;
         if (b.LW !== a.LW) return b.LW - a.LW;
         const h2h = matches.find(m => (m.p1 === a.name && m.p2 === b.name) || (m.p1 === b.name && m.p2 === a.name));
-        if (h2h && (h2h.s1 >= 2 || h2h.s2 >= 2)) {
-          const aWon = (h2h.p1 === a.name && h2h.s1 > h2h.s2) || (h2h.p2 === a.name && h2h.s2 > h2h.s1);
-          return aWon ? -1 : 1;
-        }
+        if (h2h && (h2h.s1 >= reqToWin || h2h.s2 >= reqToWin)) return ((h2h.p1 === a.name && h2h.s1 > h2h.s2) || (h2h.p2 === a.name && h2h.s2 > h2h.s1)) ? -1 : 1;
         return a.name.localeCompare(b.name);
       });
     }
 
-    // =========================================================================
-    // UI RENDERING
-    // =========================================================================
     const groupColorsText = { A: 'text-emerald-400', B: 'text-sky-400', C: 'text-rose-400', D: 'text-purple-400' };
 
-    function renderAll() {
-      const isSetup = !state.phase || state.phase === 'setup';
-      
-      if (isSetup) {
-        document.getElementById('setupPhase').classList.remove('hidden');
-        document.getElementById('tournamentPhase').classList.add('hidden');
-        return;
-      } else {
-        document.getElementById('setupPhase').classList.add('hidden');
-        document.getElementById('tournamentPhase').classList.remove('hidden');
-      }
-
+    function renderTournament() {
+      if (!state.groups) return;
+      const cfg = getActiveConfig();
       const grpKeys = Object.keys(state.groups || {});
       const st = {};
       
-      // --- GROUPS ---
+      // Update Print Header Subtitle
+      document.getElementById("printHeaderSubtitle").textContent = 
+        `Group Stage: ${getFormatLabel(cfg.g)} | Quarter-Finals: ${getFormatLabel(cfg.q)} | Semi-Finals: ${getFormatLabel(cfg.s)} | Final: ${getFormatLabel(cfg.f)}`;
+
+      // GROUPS
       document.getElementById("groupsGrid").innerHTML = grpKeys.map(g => {
-        st[g] = computeStandings(state.groups[g], state.matches[g]);
+        st[g] = computeStandings(state.groups[g], state.matches[g], cfg.g);
         const headerColor = groupColorsText[g] || 'text-white';
-        
         const rowsHtml = st[g].map((r, idx) => `
           <tr class="${idx < 2 ? 'bg-emerald-950/15' : ''}">
             <td class="py-2 pr-2"><span class="inline-block w-5 h-5 leading-5 text-center ${idx < 2 ? 'bg-emerald-500/20 text-emerald-300 font-bold rounded' : 'text-slate-500'} text-xs print-text">${idx + 1}</span></td>
@@ -458,39 +530,24 @@
             <td class="py-2 text-right font-extrabold text-white print-text">${r.Pts}</td>
           </tr>
         `).join("");
-
-        return `
-          <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
+        return `<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
             <div class="flex items-center justify-between mb-3">
               <h2 class="font-bold text-base ${headerColor} print-text">GROUP ${g} STANDINGS</h2>
               <span class="text-xs text-slate-400 print-text">Top 2 Advance</span>
             </div>
             <div class="overflow-x-auto">
-              <table class="w-full text-sm text-left">
-                <thead class="text-xs uppercase text-slate-400 border-b border-slate-800 print-text">
-                  <tr>
-                    <th class="py-2 pr-2">#</th><th class="py-2 pr-2">Player</th>
-                    <th class="py-2 text-center">P</th><th class="py-2 text-center">W</th>
-                    <th class="py-2 text-center">L</th><th class="py-2 text-center">LW</th>
-                    <th class="py-2 text-center">LL</th><th class="py-2 text-center">+/-</th>
-                    <th class="py-2 text-right">Pts</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-800/60">${rowsHtml}</tbody>
-              </table>
-            </div>
-          </div>
-        `;
+              <table class="w-full text-sm text-left"><thead class="text-xs uppercase text-slate-400 border-b border-slate-800 print-text">
+                  <tr><th class="py-2 pr-2">#</th><th class="py-2 pr-2">Player</th><th class="py-2 text-center">P</th><th class="py-2 text-center">W</th><th class="py-2 text-center">L</th><th class="py-2 text-center">LW</th><th class="py-2 text-center">LL</th><th class="py-2 text-center">+/-</th><th class="py-2 text-right">Pts</th></tr>
+                </thead><tbody class="divide-y divide-slate-800/60">${rowsHtml}</tbody></table>
+            </div></div>`;
       }).join("");
 
-      // --- FIXTURES ---
+      // FIXTURES
       document.getElementById("fixturesGrid").innerHTML = grpKeys.map(g => {
         const matchesHtml = state.matches[g].map((m, idx) => {
-          const done = m.s1 >= 2 || m.s2 >= 2;
-          const p1Win = done && m.s1 > m.s2;
-          const p2Win = done && m.s2 > m.s1;
-          return `
-            <div class="flex items-center justify-between gap-2 bg-slate-950/70 border ${done ? 'border-emerald-800/60' : 'border-slate-800'} rounded-lg px-3 py-2 print-card">
+          const done = m.s1 >= cfg.g || m.s2 >= cfg.g;
+          const p1Win = done && m.s1 > m.s2; const p2Win = done && m.s2 > m.s1;
+          return `<div class="flex items-center justify-between gap-2 bg-slate-950/70 border ${done ? 'border-emerald-800/60' : 'border-slate-800'} rounded-lg px-3 py-2 print-card">
               <div class="flex-1 text-right truncate text-sm ${p1Win ? 'font-extrabold text-emerald-400' : 'text-slate-200'} print-text">${m.p1}</div>
               <div class="flex items-center gap-1 mx-1">
                 <button onclick="changeScore('${g}', ${idx}, 's1', -1)" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">-</button>
@@ -502,155 +559,123 @@
                 <button onclick="changeScore('${g}', ${idx}, 's2', 1)" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">+</button>
               </div>
               <div class="flex-1 text-left truncate text-sm ${p2Win ? 'font-extrabold text-emerald-400' : 'text-slate-200'} print-text">${m.p2}</div>
-            </div>
-          `;
+            </div>`;
         }).join("");
-
-        return `
-          <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
-            <h3 class="font-bold text-sm uppercase tracking-wider ${groupColorsText[g]} mb-3 print-text">Group ${g} Fixtures (Best of 3)</h3>
-            <div class="space-y-2.5">${matchesHtml}</div>
-          </div>
-        `;
+        return `<div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg print-card">
+            <h3 class="font-bold text-sm uppercase tracking-wider ${groupColorsText[g]} mb-3 print-text">Group ${g} Fixtures (${getFormatLabel(cfg.g)})</h3>
+            <div class="space-y-2.5">${matchesHtml}</div></div>`;
       }).join("");
 
-      // --- KNOCKOUT ---
+      // KNOCKOUT
       const cards = [];
       let sf1P1, sf1P2, sf2P1, sf2P2;
       
       if (grpKeys.length === 4) {
-        const a1 = st.A[0]?.name || "1st A", a2 = st.A[1]?.name || "2nd A";
-        const b1 = st.B[0]?.name || "1st B", b2 = st.B[1]?.name || "2nd B";
-        const c1 = st.C[0]?.name || "1st C", c2 = st.C[1]?.name || "2nd C";
-        const d1 = st.D[0]?.name || "1st D", d2 = st.D[1]?.name || "2nd D";
-        
+        const a1 = st.A[0]?.name || "1st A", a2 = st.A[1]?.name || "2nd A", b1 = st.B[0]?.name || "1st B", b2 = st.B[1]?.name || "2nd B";
+        const c1 = st.C[0]?.name || "1st C", c2 = st.C[1]?.name || "2nd C", d1 = st.D[0]?.name || "1st D", d2 = st.D[1]?.name || "2nd D";
         const qf = state.knockout;
-        cards.push({ key: 'qf1', title: 'QF 1 (First to 2)', p1: a1, p2: b2, s1: qf.qf1.s1, s2: qf.qf1.s2, max: 2 });
-        cards.push({ key: 'qf2', title: 'QF 2 (First to 2)', p1: c1, p2: d2, s1: qf.qf2.s1, s2: qf.qf2.s2, max: 2 });
-        cards.push({ key: 'qf3', title: 'QF 3 (First to 2)', p1: b1, p2: a2, s1: qf.qf3.s1, s2: qf.qf3.s2, max: 2 });
-        cards.push({ key: 'qf4', title: 'QF 4 (First to 2)', p1: d1, p2: c2, s1: qf.qf4.s1, s2: qf.qf4.s2, max: 2 });
-        
-        sf1P1 = qf.qf1.s1 >= 2 ? a1 : (qf.qf1.s2 >= 2 ? b2 : "Winner QF1");
-        sf1P2 = qf.qf2.s1 >= 2 ? c1 : (qf.qf2.s2 >= 2 ? d2 : "Winner QF2");
-        sf2P1 = qf.qf3.s1 >= 2 ? b1 : (qf.qf3.s2 >= 2 ? a2 : "Winner QF3");
-        sf2P2 = qf.qf4.s1 >= 2 ? d1 : (qf.qf4.s2 >= 2 ? c2 : "Winner QF4");
+        cards.push({ key: 'qf1', title: `QF 1 (${getFormatLabel(qf.qf1.max)})`, p1: a1, p2: b2, s1: qf.qf1.s1, s2: qf.qf1.s2, max: qf.qf1.max });
+        cards.push({ key: 'qf2', title: `QF 2 (${getFormatLabel(qf.qf2.max)})`, p1: c1, p2: d2, s1: qf.qf2.s1, s2: qf.qf2.s2, max: qf.qf2.max });
+        cards.push({ key: 'qf3', title: `QF 3 (${getFormatLabel(qf.qf3.max)})`, p1: b1, p2: a2, s1: qf.qf3.s1, s2: qf.qf3.s2, max: qf.qf3.max });
+        cards.push({ key: 'qf4', title: `QF 4 (${getFormatLabel(qf.qf4.max)})`, p1: d1, p2: c2, s1: qf.qf4.s1, s2: qf.qf4.s2, max: qf.qf4.max });
+        sf1P1 = qf.qf1.s1 >= qf.qf1.max ? a1 : (qf.qf1.s2 >= qf.qf1.max ? b2 : "Winner QF1"); sf1P2 = qf.qf2.s1 >= qf.qf2.max ? c1 : (qf.qf2.s2 >= qf.qf2.max ? d2 : "Winner QF2");
+        sf2P1 = qf.qf3.s1 >= qf.qf3.max ? b1 : (qf.qf3.s2 >= qf.qf3.max ? a2 : "Winner QF3"); sf2P2 = qf.qf4.s1 >= qf.qf4.max ? d1 : (qf.qf4.s2 >= qf.qf4.max ? c2 : "Winner QF4");
       } else if (grpKeys.length >= 2) {
-        sf1P1 = st.A[0]?.name || "1st A"; sf1P2 = st.B[1]?.name || "2nd B";
-        sf2P1 = st.B[0]?.name || "1st B"; sf2P2 = st.A[1]?.name || "2nd A";
+        sf1P1 = st.A[0]?.name || "1st A"; sf1P2 = st.B[1]?.name || "2nd B"; sf2P1 = st.B[0]?.name || "1st B"; sf2P2 = st.A[1]?.name || "2nd A";
       }
 
       if (grpKeys.length >= 2) {
         const sf = state.knockout;
-        cards.push({ key: 'sf1', title: 'Semi-Final 1 (First to 3)', p1: sf1P1, p2: sf1P2, s1: sf.sf1.s1, s2: sf.sf1.s2, max: 3 });
-        cards.push({ key: 'sf2', title: 'Semi-Final 2 (First to 3)', p1: sf2P1, p2: sf2P2, s1: sf.sf2.s1, s2: sf.sf2.s2, max: 3 });
-        
-        const finP1 = sf.sf1.s1 >= 3 ? sf1P1 : (sf.sf1.s2 >= 3 ? sf1P2 : "Winner SF1");
-        const finP2 = sf.sf2.s1 >= 3 ? sf2P1 : (sf.sf2.s2 >= 3 ? sf2P2 : "Winner SF2");
-        cards.push({ key: 'final', title: 'Grand Final (First to 4)', p1: finP1, p2: finP2, s1: sf.final.s1, s2: sf.final.s2, max: 4 });
+        cards.push({ key: 'sf1', title: `Semi 1 (${getFormatLabel(sf.sf1.max)})`, p1: sf1P1, p2: sf1P2, s1: sf.sf1.s1, s2: sf.sf1.s2, max: sf.sf1.max });
+        cards.push({ key: 'sf2', title: `Semi 2 (${getFormatLabel(sf.sf2.max)})`, p1: sf2P1, p2: sf2P2, s1: sf.sf2.s1, s2: sf.sf2.s2, max: sf.sf2.max });
+        const finP1 = sf.sf1.s1 >= sf.sf1.max ? sf1P1 : (sf.sf1.s2 >= sf.sf1.max ? sf1P2 : "Winner SF1");
+        const finP2 = sf.sf2.s1 >= sf.sf2.max ? sf2P1 : (sf.sf2.s2 >= sf.sf2.max ? sf2P2 : "Winner SF2");
+        cards.push({ key: 'final', title: `Final (${getFormatLabel(sf.final.max)})`, p1: finP1, p2: finP2, s1: sf.final.s1, s2: sf.final.s2, max: sf.final.max });
       } else if (grpKeys.length === 1) {
-        const a1 = st.A[0]?.name || "1st"; const a2 = st.A[1]?.name || "2nd";
-        cards.push({ key: 'final', title: 'Grand Final (First to 4)', p1: a1, p2: a2, s1: state.knockout.final.s1, s2: state.knockout.final.s2, max: 4 });
+        cards.push({ key: 'final', title: `Final (${getFormatLabel(state.knockout.final.max)})`, p1: st.A[0]?.name || "1st", p2: st.A[1]?.name || "2nd", s1: state.knockout.final.s1, s2: state.knockout.final.s2, max: state.knockout.final.max });
       }
 
       document.getElementById("knockoutContainer").innerHTML = cards.map(c => `
         <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 print-card flex flex-col justify-between">
           <div class="text-xs font-bold uppercase tracking-wider text-amber-400 print-text mb-2">${c.title}</div>
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-sm truncate pr-2 print-text">${c.p1}</span>
+          <div class="flex items-center justify-between"><span class="font-bold text-sm truncate pr-2 print-text">${c.p1}</span>
             <div class="flex items-center gap-1.5 shrink-0">
               <button onclick="changeKnockout('${c.key}', 's1', -1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">-</button>
               <span class="w-6 text-center font-extrabold text-base print-text">${c.s1}</span>
               <button onclick="changeKnockout('${c.key}', 's1', 1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">+</button>
             </div>
           </div>
-          <div class="flex items-center justify-between">
-            <span class="font-bold text-sm truncate pr-2 print-text">${c.p2}</span>
+          <div class="flex items-center justify-between"><span class="font-bold text-sm truncate pr-2 print-text">${c.p2}</span>
             <div class="flex items-center gap-1.5 shrink-0">
               <button onclick="changeKnockout('${c.key}', 's2', -1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">-</button>
               <span class="w-6 text-center font-extrabold text-base print-text">${c.s2}</span>
               <button onclick="changeKnockout('${c.key}', 's2', 1, ${c.max})" class="no-print w-6 h-6 rounded bg-slate-800 hover:bg-slate-700 text-xs font-bold">+</button>
             </div>
           </div>
-          ${c.key === 'final' && (c.s1 >= c.max || c.s2 >= c.max) ? 
-            `<div class="pt-2 mt-2 border-t border-amber-500/30 text-center text-xs font-extrabold text-amber-300 print-text">👑 CHAMPION: ${c.s1 >= c.max ? c.p1 : c.p2}</div>` 
-            : ''}
+          ${c.key === 'final' && (c.s1 >= c.max || c.s2 >= c.max) ? `<div class="pt-2 mt-2 border-t border-amber-500/30 text-center text-xs font-extrabold text-amber-300 print-text">👑 CHAMPION: ${c.s1 >= c.max ? c.p1 : c.p2}</div>` : ''}
         </div>
       `).join("");
 
-      // --- STATS ---
+      // STATS
       document.getElementById("statsGrid").innerHTML = (state.players || []).map(p => {
         const stats = state.stats[p] || { maxes: 0, highOut: 0 };
         return `
           <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2 print-card">
             <div class="font-bold text-xs text-white truncate print-text">${p}</div>
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-400 print-text">180s:</span>
+            <div class="flex items-center justify-between text-xs"><span class="text-slate-400 print-text">180s:</span>
               <div class="flex items-center gap-1">
                 <button onclick="change180('${p}', -1)" class="no-print w-5 h-5 rounded bg-slate-800 text-xs">-</button>
                 <span class="font-bold w-5 text-center text-amber-400 print-text">${stats.maxes}</span>
                 <button onclick="change180('${p}', 1)" class="no-print w-5 h-5 rounded bg-slate-800 text-xs">+</button>
               </div>
             </div>
-            <div class="flex items-center justify-between text-xs">
-              <span class="text-slate-400 print-text">Out:</span>
-              <input type="number" min="0" max="170" value="${stats.highOut || 0}"
-                onchange="changeHighOut('${p}', this.value)"
+            <div class="flex items-center justify-between text-xs"><span class="text-slate-400 print-text">Out:</span>
+              <input type="number" min="0" max="170" value="${stats.highOut || 0}" onchange="changeHighOut('${p}', this.value)"
                 class="w-12 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-right font-bold text-emerald-400 print-text" />
             </div>
-          </div>
-        `;
+          </div>`;
       }).join("");
     }
 
-    // =========================================================================
-    // INTERACTION HANDLERS
-    // =========================================================================
     function changeScore(groupKey, idx, side, delta) {
+      const cfg = getActiveConfig();
       const match = state.matches[groupKey][idx];
-      match[side] = Math.max(0, Math.min(2, (Number(match[side]) || 0) + delta));
+      match[side] = Math.max(0, Math.min(cfg.g, (Number(match[side]) || 0) + delta));
       pushStateUpdate();
     }
-
     function changeKnockout(stageKey, side, delta, maxLegs) {
       const m = state.knockout[stageKey];
       m[side] = Math.max(0, Math.min(maxLegs, (Number(m[side]) || 0) + delta));
       pushStateUpdate();
     }
-
     function change180(player, delta) {
       if (!state.stats[player]) state.stats[player] = { maxes: 0, highOut: 0 };
       state.stats[player].maxes = Math.max(0, (state.stats[player].maxes || 0) + delta);
       pushStateUpdate();
     }
-
     function changeHighOut(player, val) {
       if (!state.stats[player]) state.stats[player] = { maxes: 0, highOut: 0 };
       state.stats[player].highOut = Math.max(0, Math.min(170, Number(val) || 0));
       pushStateUpdate();
     }
 
+    // SHARE MODAL
     function openShareModal() {
-      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+      const shareUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}&join=true`;
       document.getElementById("modalRoomLabel").textContent = roomCode;
       document.getElementById("shareUrlInput").value = shareUrl;
       document.getElementById("qrImage").src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(shareUrl)}`;
       document.getElementById("shareModal").classList.remove("hidden");
       document.getElementById("shareModal").classList.add("flex");
     }
-
     function closeShareModal() {
       document.getElementById("shareModal").classList.add("hidden");
       document.getElementById("shareModal").classList.remove("flex");
     }
-
     function copyShareLink() {
       navigator.clipboard.writeText(document.getElementById("shareUrlInput").value);
-      alert("Live Tournament Link copied! Paste it into your WhatsApp group.");
+      alert("Live Join Link copied!");
     }
-
-    // Boot up
-    renderAll();
-    initLiveSync();
   </script>
 </body>
 </html>
