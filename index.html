@@ -193,7 +193,7 @@
     let hostConn = null;
     let clientConns = [];
 
-    // ADDED: TURN Servers to force connections through 4G/5G Firewalls
+    // STUN & TURN Servers to force connections through 4G/5G Firewalls
     const peerOptions = {
       config: {
         iceServers: [
@@ -214,7 +214,7 @@
     };
 
     function getHostPeerId(code) {
-      return `raf-darts-${code.toLowerCase()}-v4`;
+      return `raf-darts-${code.toLowerCase()}-v5`; // Bumped to v5 to clear old cached rooms
     }
 
     function getActiveConfig() {
@@ -239,9 +239,7 @@
 
       if (urlRoom) {
         document.getElementById("lobbyRoomInput").value = urlRoom;
-        if (urlJoin === "true") {
-          attemptJoin();
-        }
+        if (urlJoin === "true") attemptJoin();
       }
       showPhase('lobby');
     };
@@ -250,7 +248,7 @@
       const errEl = document.getElementById("lobbyError");
       errEl.textContent = msg;
       errEl.classList.remove("hidden");
-      setTimeout(() => errEl.classList.add("hidden"), 5000);
+      setTimeout(() => errEl.classList.add("hidden"), 6000);
     }
 
     function showPhase(phase) {
@@ -306,9 +304,20 @@
 
       peer.on("connection", (conn) => {
         clientConns.push(conn);
-        updateBadge("emerald", `Live Room Active (${clientConns.length} players)`);
+        updateHostPlayerCount();
 
-        conn.on("open", () => conn.send({ type: "SYNC_STATE", state }));
+        // Ghost connection cleanup: Drop the connection if it doesn't open fully in 5 seconds
+        const ghostTimeout = setTimeout(() => {
+          if (!conn.open) {
+            clientConns = clientConns.filter(c => c !== conn);
+            updateHostPlayerCount();
+          }
+        }, 5000);
+
+        conn.on("open", () => {
+          clearTimeout(ghostTimeout);
+          conn.send({ type: "SYNC_STATE", state });
+        });
 
         conn.on("data", (msg) => {
           if (msg && msg.type === "REQUEST_STATE") {
@@ -326,7 +335,12 @@
 
         conn.on("close", () => {
           clientConns = clientConns.filter(c => c !== conn);
-          updateBadge("emerald", `Live Room Active (${clientConns.length} players)`);
+          updateHostPlayerCount();
+        });
+        
+        conn.on("error", () => {
+          clientConns = clientConns.filter(c => c !== conn);
+          updateHostPlayerCount();
         });
       });
 
@@ -339,6 +353,11 @@
           setTimeout(() => initHostPeer(code), 3000);
         }
       });
+    }
+
+    function updateHostPlayerCount() {
+      const activeCount = clientConns.filter(c => c.open).length;
+      updateBadge("emerald", `Live Room Active (${activeCount} players)`);
     }
 
     // =========================================================================
@@ -374,7 +393,8 @@
           attempts++;
           updateBadge("amber", `Connecting to Host (Attempt ${attempts}/3)...`);
           
-          const conn = peer.connect(getHostPeerId(code));
+          // Force unreliable UDP mode to bypass strict Wi-Fi firewalls
+          const conn = peer.connect(getHostPeerId(code), { reliable: false });
           hostConn = conn;
 
           const timeout = setTimeout(() => {
@@ -383,10 +403,10 @@
                 setTimeout(tryConnect, 1000);
               } else {
                 leaveRoom();
-                showError(`Could not reach Host "${code}". They may be offline or blocked by a firewall.`);
+                showError(`Could not reach Host "${code}". The Wi-Fi firewall is actively blocking the connection.`);
               }
             }
-          }, 7000);
+          }, 6000);
 
           conn.on("open", () => {
             isConnected = true;
