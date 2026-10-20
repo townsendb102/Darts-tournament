@@ -187,20 +187,28 @@
     // =========================================================================
     let roomCode = "";
     let state = {};
-    let currentRole = null; // 'host' or 'client'
+    let currentRole = null; 
 
-    // PeerJS Networking Variables
     let peer = null;
     let hostConn = null;
     let clientConns = [];
 
+    // ADDED: TURN Servers to force connections through 4G/5G Firewalls
     const peerOptions = {
       config: {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' }
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
         ]
       }
     };
@@ -210,7 +218,6 @@
     }
 
     function getActiveConfig() {
-      // Fallback for older saves before config was added
       return state.config || { g: 2, q: 2, s: 3, f: 4 };
     }
 
@@ -376,7 +383,7 @@
                 setTimeout(tryConnect, 1000);
               } else {
                 leaveRoom();
-                showError(`Could not find Host "${code}". Ensure the host's screen is on and on the same Wi-Fi.`);
+                showError(`Could not reach Host "${code}". They may be offline or blocked by a firewall.`);
               }
             }
           }, 7000);
@@ -531,7 +538,6 @@
       const grpKeys = Object.keys(state.groups || {});
       const st = {};
       
-      // Update Print Header Subtitle
       document.getElementById("printHeaderSubtitle").textContent = 
         `Group Stage: ${getFormatLabel(cfg.g)} | Quarter-Finals: ${getFormatLabel(cfg.q)} | Semi-Finals: ${getFormatLabel(cfg.s)} | Final: ${getFormatLabel(cfg.f)}`;
 
