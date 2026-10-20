@@ -151,6 +151,18 @@
     let hostConn = null;
     let clientConns = [];
 
+    // Add multiple STUN servers to punch through strict mobile network NATs
+    const peerOptions = {
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' }
+        ]
+      }
+    };
+
     function getHostPeerId() {
       return `raf-darts-hub-${roomCode.toLowerCase()}-v3`;
     }
@@ -164,7 +176,9 @@
       isHost = false;
 
       const hostId = getHostPeerId();
-      const tryHost = new Peer(hostId);
+      
+      // Pass the STUN config into the Host peer
+      const tryHost = new Peer(hostId, peerOptions);
 
       tryHost.on("open", () => {
         peer = tryHost;
@@ -210,15 +224,29 @@
     }
 
     function connectAsClient(hostId) {
-      const clientPeer = new Peer();
+      // Pass the STUN config into the Client peer
+      const clientPeer = new Peer(peerOptions);
       peer = clientPeer;
       isHost = false;
 
       clientPeer.on("open", () => {
-        const conn = clientPeer.connect(hostId, { reliable: true });
+        // Update UI so the user knows it reached the signaling server
+        document.getElementById("syncStatusText").textContent = "Negotiating P2P connection...";
+        
+        // Remove { reliable: true } which causes silent hangups in modern WebRTC
+        const conn = clientPeer.connect(hostId);
         hostConn = conn;
 
+        // Fallback: If WebRTC fails to punch through, retry instead of hanging forever
+        const connectionTimeout = setTimeout(() => {
+          if (!conn.open) {
+            updateSyncBadge("retry");
+            initLiveSync();
+          }
+        }, 8000);
+
         conn.on("open", () => {
+          clearTimeout(connectionTimeout); // Connection succeeded, cancel the timeout
           updateSyncBadge("client");
           if (state.updatedAt > 0) {
             conn.send({ type: "SYNC_STATE", state });
@@ -239,11 +267,12 @@
           updateSyncBadge("retry");
           setTimeout(initLiveSync, 2000);
         });
-
-        conn.on("error", () => setTimeout(initLiveSync, 3000));
       });
 
-      clientPeer.on("error", () => setTimeout(initLiveSync, 4000));
+      clientPeer.on("error", () => {
+        updateSyncBadge("retry");
+        setTimeout(initLiveSync, 4000);
+      });
     }
 
     function broadcastToClients(excludeConn = null) {
